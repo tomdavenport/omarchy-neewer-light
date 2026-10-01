@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.tomdavenport.neewer",
+  "name": "NEEWER Light",
+  "version": "2.4.0",
+  "author": "Tom Davenport",
+  "description": "Sync a NEEWER RGB1 light stick with your Omarchy theme over Bluetooth. Three palette colours, gentle fades and simple brightness controls.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "NEEWER Light",
+    "description": "Connect an RGB1, match your theme and control ambient lighting from the bar.",
+    "category": "Hardware",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/tomdavenport/omarchy-neewer-light"
+}
