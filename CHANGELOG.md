@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.1 — Fade with theme changes
+
+- Blend from the current light colour into a new theme using Omarchy's 420 ms cubic easing.
+- Start near the background transition, with a short fallback for changes without a background.
+- Preserve Cycle progress and brightness; clicking a swatch still previews immediately.
+- Rapid theme changes continue from the last colour sent. Reconnecting lights apply the latest palette, and Off stays off.
+
 ## 2.4.0 — First public release
 
 - Guided first-use setup: enable local controls, find the RGB1, test its colour and confirm.

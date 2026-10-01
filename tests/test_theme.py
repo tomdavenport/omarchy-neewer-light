@@ -12,7 +12,7 @@ from test_service import FakeRadio
 
 
 class ThemeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_real_file_event_updates_warm_light_under_200ms(self):
+    async def test_background_event_starts_420ms_fade_on_warm_connection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'theme').mkdir()
@@ -32,19 +32,71 @@ class ThemeTests(unittest.IsolatedAsyncioTestCase):
                         while not radio.writes:
                             await asyncio.sleep(0.002)
                     colours.write_text('accent="#445566"\norange="#ffaa55"\nforeground="#eeeeee"\n')
-                    started = time.monotonic()
                     (root / 'theme.name').write_text('second')
+                    await asyncio.sleep(0.05)
+                    self.assertEqual(len(radio.writes), 1)
+                    self.assertEqual(light.theme, 'First')
+                    started = time.monotonic()
+                    (root / 'background').symlink_to('wallpaper.png')
                     async with asyncio.timeout(1):
-                        while radio.writes[-1][2] != '#445566':
+                        while len(radio.writes) == 1:
                             await asyncio.sleep(0.002)
+                    first_frame = time.monotonic() - started
+                    self.assertLess(first_frame, 0.2)
+                    self.assertNotEqual(radio.writes[-1][2], '#445566')
+                    async with asyncio.timeout(1):
+                        while light.transition.active:
+                            await asyncio.sleep(0.002)
+                    self.assertEqual(config.packet(cfg, 'theme', radio.writes[-1][2]),
+                                     config.packet(cfg, 'theme', '#445566'))
                     elapsed = (time.monotonic() - started) * 1000
-                    self.assertLess(elapsed, 200)
+                    self.assertGreaterEqual(elapsed, 410)
+                    self.assertLess(elapsed, 750)
                     self.assertEqual(radio.connections, 1)
-                    print(f'File change → simulated BLE write: {elapsed:.1f} ms; one connection')
+                    print(f'Background event → final simulated colour: {elapsed:.1f} ms; one connection')
                 finally:
                     watcher.close()
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
+
+    async def test_theme_without_background_has_bounded_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, calls = Path(directory), []
+            watcher = ThemeWatch(root, lambda: calls.append(time.monotonic()))
+            try:
+                started = time.monotonic()
+                (root / 'theme.name').write_text('first')
+                async with asyncio.timeout(1):
+                    while not calls:
+                        await asyncio.sleep(0.002)
+                self.assertGreaterEqual(calls[0] - started, 0.14)
+                self.assertLess(calls[0] - started, 0.3)
+                (root / 'background').symlink_to('late.png')
+                await asyncio.sleep(0.2)
+                self.assertEqual(len(calls), 1)
+            finally:
+                watcher.close()
+
+    async def test_rapid_theme_and_replaced_background_use_latest_palette_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, calls = Path(directory), []
+            (root / 'background').symlink_to('old.png')
+            watcher = ThemeWatch(root, lambda: calls.append((root / 'theme.name').read_text()))
+            try:
+                (root / 'theme.name').write_text('first')
+                await asyncio.sleep(0.02)
+                (root / 'theme.name').write_text('second')
+                await asyncio.sleep(0.02)
+                (root / 'next-background').symlink_to('new.png')
+                (root / 'next-background').replace(root / 'background')
+                await asyncio.sleep(0.2)
+                self.assertEqual(calls, ['second'])
+                (root / 'background').unlink()
+                (root / 'background').symlink_to('background-only.png')
+                await asyncio.sleep(0.2)
+                self.assertEqual(calls, ['second'])
+            finally:
+                watcher.close()
 
     async def test_all_installed_themes_offer_three_valid_roles(self):
         paths = list(Path('/usr/share/omarchy/themes').glob('*/colors.toml'))

@@ -70,7 +70,7 @@ class SetupTests(unittest.TestCase):
         self.install()
         self.assertEqual(cfg.read_text(), '{"brightness":37}')
         self.assertTrue((self.app / 'venv').is_symlink())
-        self.assertEqual((self.app / 'installed-version').read_text().strip(), '2.4.0')
+        self.assertEqual((self.app / 'installed-version').read_text().strip(), json.loads((ROOT / 'manifest.json').read_text())['version'])
         self.assertEqual(self.app.stat().st_mode & 0o777, 0o700)
         self.assertTrue(any(c[-1] == 'status' for c in self.commands))
         self.assertTrue((self.home / '.local/bin/neewer-light').exists())

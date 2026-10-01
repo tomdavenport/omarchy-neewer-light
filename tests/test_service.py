@@ -77,12 +77,13 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.radio.writes[-1][2], '#abcdef')
         self.colours[1], self.theme = '#fedcba', 'Second'
         self.service.theme_changed()
-        await self.until(lambda: len(self.radio.writes) == 3)
+        await self.until(lambda: self.radio.writes[-1][2] == '#fedcba')
         self.assertEqual(self.radio.writes[-1][2], '#fedcba')
         self.assertEqual(self.radio.connections, 1)
+        count = len(self.radio.writes)
         self.service.command('hook')
         await asyncio.sleep(0.02)
-        self.assertEqual(len(self.radio.writes), 3)
+        self.assertEqual(len(self.radio.writes), count)
         self.assertEqual(self.service.cfg['role'], 'complementary')
 
     async def test_latest_theme_wins_during_connect(self):

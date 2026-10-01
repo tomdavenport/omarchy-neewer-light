@@ -5,6 +5,7 @@ import time
 from light_config import STATE, load, save, selected, write_json, packet
 from light_ble import Radio, discover
 from light_effects import PaletteCycle
+from light_transition import ThemeTransition
 
 KEEPALIVE_SECONDS = 5.0
 RETRY_SECONDS = 2.0
@@ -27,10 +28,11 @@ class LightService:
         self.last_error, self.published_at = '', 0.0
         self.generation, self.probe_requested = 0, False
         self.theme, self.roles, self.colour = selected(self.cfg)
+        self.transition = ThemeTransition(self.theme, self.roles)
         self.tasks = set()
 
     def snapshot(self, ok=True):
-        return dict(self.cfg, version='2.4.0', backend_ready=True, ok=ok, configured=bool(self.cfg['address']),
+        return dict(self.cfg, version='2.4.1', backend_ready=True, ok=ok, configured=bool(self.cfg['address']),
             connection_state=self.stage, scanning=self.scanning, devices=self.devices,
             test_success=self.test_success, theme=self.theme, roles=self.roles,
             hex=self.colour, message=self.message, sent_count=self.sent_count,
@@ -52,7 +54,7 @@ class LightService:
 
     def theme_changed(self):
         try:
-            self.theme, self.roles, self.colour = selected(self.cfg)
+            self.theme, self.roles, _ = selected(self.cfg)
             if self.cfg['follow'] and self.cfg['setup_complete']:
                 self.dirty = True
                 self.generation += 1
@@ -102,6 +104,7 @@ class LightService:
                         self.connected_at = time.strftime('%Y-%m-%d %H:%M:%S')
                         self.last_activity = 0.0
                         logging.info('RGB1 connected (connection %s)', self.connection_count)
+                        self.theme, self.roles, _ = selected(self.cfg)
                         self.dirty |= self.cfg['follow'] and self.cfg['setup_complete']
                     keep = self.cfg['follow'] and self.cfg['setup_complete']
                     if not (keep or self.dirty or self.pending_power or self.probe_requested):
@@ -111,8 +114,12 @@ class LightService:
                                and time.monotonic() - self.last_activity >= KEEPALIVE_SECONDS)
                     action = self.pending_power or 'theme'
                     try:
-                        theme, roles, _ = selected(self.cfg)
+                        theme, roles = self.theme, self.roles
                         rendered, colour, advanced = self.cycle.render(self.cfg, roles)
+                        colour, fading = self.transition.render(theme, roles, colour, self.cfg.get('last_colour'),
+                            bool(keep and self.last_signature and not self.pending_power
+                                 and self.cfg.get('last_requested_power') != 'off'))
+                        advanced |= fading
                         self.dirty |= advanced
                     except (OSError, ValueError):
                         self.publish('Waiting for the new theme palette…')
@@ -180,7 +187,7 @@ class LightService:
                     delay = max(0.01, KEEPALIVE_SECONDS - (time.monotonic() - self.last_activity))
                     if self.cfg.get('last_requested_power') == 'off':
                         delay = KEEPALIVE_SECONDS
-                    effect_delay = self.cycle.wait_seconds(self.cfg)
+                    effect_delay = self.transition.wait_seconds(self.cycle.wait_seconds(self.cfg))
                     if effect_delay is not None:
                         delay = min(delay, effect_delay)
                     try:

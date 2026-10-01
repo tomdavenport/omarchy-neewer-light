@@ -97,6 +97,8 @@ def command(service, action, value=None):
     theme, roles, colour = selected(cfg)
     save(cfg)
     service.cfg = cfg
+    if action in ('role', 'preview', 'select', 'on', 'off', 'test') or (action == 'follow' and not cfg['follow']):
+        service.transition.cancel(theme, roles)
     logging.info('RGB1 control %s %s', action, value if value is not None else '')
     if action in ('role', 'preview', 'mode', 'speed', 'follow', 'select', 'confirm', 'on'):
         service.cycle.reset(cfg, preserve=action in ('speed', 'on'))

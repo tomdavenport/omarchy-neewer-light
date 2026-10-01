@@ -10,7 +10,7 @@ Match a **NEEWER RGB1 light stick** to your Omarchy theme, directly over Bluetoo
 
 ## What it does
 
-- **Follows your theme.** Switching Omarchy themes updates the light as soon as the new palette is available and the light is connected.
+- **Fades with your desktop.** Switching Omarchy themes blends the connected light into the new palette with a short fade matched to Omarchy's transition.
 - **Three useful colours.** Main, Complement and Alternate come from the active theme. Click a swatch to preview it immediately.
 - **Gentle ambient fades.** Optional Cycle blends between those colours. Choose Slow, Medium or Fast; turning Cycle off holds the current blend.
 - **Simple everyday controls.** Brightness, On, Off and Follow theme. Your choices are saved.
@@ -85,6 +85,8 @@ The widget asks before installing its local helper. It downloads pinned **Bleak 
 Setup preserves the saved light and brightness. Before replacing helper files it saves local before-images under `~/.local/share/neewer-omarchy/backups/`. It does not alter system Bluetooth configuration, firmware, unrelated bar widgets or shell settings. The user service starts at login and keeps running when the panel is closed.
 
 Theme-file events provide the quick response; the theme hook is a fallback. While steady, the helper refreshes the colour every five seconds without repeatedly sending power On. Fades use paced, serial writes and skip redundant or missed frames. This is connection maintenance, not a guarantee against radio interference or a powered-down light.
+
+Theme changes use Omarchy 4's 420 ms ease-in/ease-out curve, starting near the background transition. They blend from the last colour sent to the RGB1, including during Cycle. Colour previews stay immediate. The background-file event provides approximate alignment; Bluetooth latency and wallpaper loading can affect the visible timing. Reconnecting lights apply the latest palette directly.
 
 ## Update
 

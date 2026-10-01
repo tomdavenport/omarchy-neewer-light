@@ -95,7 +95,7 @@ class EffectTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.radio.writes), count)
         self.assertEqual(self.service.cfg['mode'], 'steady')
 
-    async def test_theme_change_replaces_fade_endpoints_immediately(self):
+    async def test_theme_change_fades_into_cycle_without_resetting_its_progress(self):
         await self.cycle()
         await self.advance(6)
         previous = self.radio.writes[-1][2]
@@ -103,8 +103,19 @@ class EffectTests(unittest.IsolatedAsyncioTestCase):
         self.service.theme_changed()
         await self.until(lambda: self.radio.writes[-1][2] != previous)
         expected = blend(self.service.roles, self.service.cycle.weights)
+        self.assertNotEqual(self.radio.writes[-1][2], expected)
+        await self.until(lambda: not self.service.transition.active)
         self.assertEqual(self.radio.writes[-1][2], expected)
         self.assertEqual(self.radio.connections, 1)
+
+    async def test_cycle_keeps_accepted_palette_until_theme_event_is_released(self):
+        await self.cycle()
+        accepted_roles = self.service.roles
+        self.theme, self.colours[0] = 'Staged', '#00ff11'
+        await self.advance(6)
+        self.assertEqual(self.radio.writes[-1][2], blend(accepted_roles, self.service.cycle.weights))
+        self.assertEqual(self.service.theme, 'First')
+        self.assertFalse(self.service.transition.active)
 
     async def test_speed_change_preserves_colour_and_changes_transition_time(self):
         await self.cycle()

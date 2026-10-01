@@ -4,6 +4,8 @@ import ctypes
 import os
 import struct
 
+BACKGROUND_WAIT_SECONDS = 0.150
+
 
 class ThemeWatch:
     def __init__(self, directory, callback):
@@ -14,8 +16,9 @@ class ThemeWatch:
         self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
         if self.fd < 0:
             raise OSError(ctypes.get_errno(), 'Could not watch theme changes')
-        # Close-write + moved-to cover theme.name and the replaced theme folder.
-        if libc.inotify_add_watch(self.fd, os.fsencode(directory), 0x8 | 0x80) < 0:
+        # The background link is replaced after the shell accepts its transition.
+        # CREATE also covers ln -nsf replacing the link without an atomic rename.
+        if libc.inotify_add_watch(self.fd, os.fsencode(directory), 0x8 | 0x80 | 0x100) < 0:
             os.close(self.fd)
             raise OSError(ctypes.get_errno(), 'Could not watch theme folder')
         self.loop.add_reader(self.fd, self.read)
@@ -25,16 +28,26 @@ class ThemeWatch:
             data = os.read(self.fd, 65536)
         except BlockingIOError:
             return
-        offset, relevant = 0, False
+        offset, relevant, background = 0, False, False
         while offset + 16 <= len(data):
-            _, _, _, length = struct.unpack_from('iIII', data, offset)
+            _, mask, _, length = struct.unpack_from('iIII', data, offset)
             name = data[offset + 16:offset + 16 + length].split(b'\0')[0]
-            relevant |= name in (b'theme', b'theme.name')
+            relevant |= name in (b'theme', b'theme.name') and bool(mask & (0x8 | 0x80))
+            background |= name == b'background' and bool(mask & (0x80 | 0x100))
             offset += 16 + length
-        if relevant:
+        if background and (relevant or self.timer):
+            self.flush()
+        elif relevant:
             if self.timer:
                 self.timer.cancel()
-            self.timer = self.loop.call_later(0.02, self.callback)
+            # No-background/headless paths still follow the palette promptly.
+            self.timer = self.loop.call_later(BACKGROUND_WAIT_SECONDS, self.flush)
+
+    def flush(self):
+        if self.timer:
+            self.timer.cancel()
+        self.timer = None
+        self.callback()
 
     def close(self):
         if self.timer:
