@@ -21,6 +21,11 @@ def valid(values, key):
     return None
 
 
+def held(cfg, roles):
+    """A stopped fade holds its last sent colour until the palette changes."""
+    return valid(cfg, 'held_colour') if cfg.get('held_palette') == [r['hex'] for r in roles] else None
+
+
 def hsv(hex_colour):
     rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
     return colorsys.rgb_to_hsv(*rgb)

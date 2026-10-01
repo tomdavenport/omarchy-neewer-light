@@ -1,82 +1,19 @@
-"""Event-driven state and a warm BLE link; IPC is in light_daemon.py."""
+"""Serial BLE writer; commands, presentation and lifecycle state are separate."""
 import asyncio
 import logging
 import time
-from light_config import STATE, load, save, selected, write_json, packet
-from light_ble import Radio, discover
-from light_effects import PaletteCycle
-from light_transition import ThemeTransition
+from light_config import load, save, selected, write_json, packet
+from light_ble import Radio
+from light_transition import FADE_DURATIONS
+from light_state import LightState
 
 KEEPALIVE_SECONDS = 5.0
 RETRY_SECONDS = 2.0
 
 
-class LightService:
+class LightService(LightState):
     def __init__(self):
-        self.cfg = load()
-        self.cycle = PaletteCycle()
-        self.wake = asyncio.Event()
-        self.radio = Radio(self.wake.set)
-        self.stage, self.message = 'offline', 'Starting light controls…'
-        self.scanning, self.devices, self.test_success = False, [], False
-        self.dirty, self.force, self.pending_power = self.cfg['follow'] and self.cfg['setup_complete'], False, None
-        self.last_signature, self.triggered_at, self.theme_latency_ms = None, None, None
-        self.sent_count = 0
-        self.keepalive_count, self.connection_count = 0, 0
-        self.last_activity, self.connected_at = 0.0, None
-        self.last_keepalive = None
-        self.last_error, self.published_at = '', 0.0
-        self.generation, self.probe_requested = 0, False
-        self.theme, self.roles, self.colour = selected(self.cfg)
-        self.transition = ThemeTransition(self.theme, self.roles)
-        self.tasks = set()
-
-    def snapshot(self, ok=True):
-        return dict(self.cfg, version='2.4.1', backend_ready=True, ok=ok, configured=bool(self.cfg['address']),
-            connection_state=self.stage, scanning=self.scanning, devices=self.devices,
-            test_success=self.test_success, theme=self.theme, roles=self.roles,
-            hex=self.colour, message=self.message, sent_count=self.sent_count,
-            theme_latency_ms=self.theme_latency_ms, last_error=self.last_error,
-            keepalive_seconds=KEEPALIVE_SECONDS, keepalive_count=self.keepalive_count,
-            last_keepalive=self.last_keepalive, connection_count=self.connection_count,
-            disconnect_count=getattr(self.radio, 'disconnect_count', 0),
-            connect_failure_count=getattr(self.radio, 'connect_failure_count', 0),
-            connected_since=self.connected_at,
-            role=self.cycle.role if self.cfg.get('mode') == 'cycle' and self.cycle.role else self.cfg['role'])
-
-    def publish(self, message=None, throttle=False):
-        if message is not None:
-            self.message = message
-        if throttle and time.monotonic() - self.published_at < 0.5:
-            return
-        self.published_at = time.monotonic()
-        write_json(STATE / 'status.json', self.snapshot())
-
-    def theme_changed(self):
-        try:
-            self.theme, self.roles, _ = selected(self.cfg)
-            if self.cfg['follow'] and self.cfg['setup_complete']:
-                self.dirty = True
-                self.generation += 1
-                self.triggered_at = time.monotonic()
-                self.wake.set()
-            self.publish()
-        except (OSError, ValueError):
-            self.publish('Waiting for the new theme palette…')
-
-    async def scan(self):
-        try:
-            self.devices = await discover()
-            self.publish('Choose your light.' if self.devices else 'No RGB1 found. Check the setup steps and try again.')
-        except Exception:
-            self.publish('Could not search. Check Bluetooth is switched on.')
-        finally:
-            self.scanning = False
-            self.publish()
-
-    def command(self, action, value=None):
-        from light_commands import command
-        return command(self, action, value)
+        super().__init__(load=load, radio=Radio, selected=selected, write_json=write_json)
 
     async def run(self):
         failures = 0
@@ -105,20 +42,23 @@ class LightService:
                         self.last_activity = 0.0
                         logging.info('RGB1 connected (connection %s)', self.connection_count)
                         self.theme, self.roles, _ = selected(self.cfg)
+                        self.power.reconnected()
                         self.dirty |= self.cfg['follow'] and self.cfg['setup_complete']
                     keep = self.cfg['follow'] and self.cfg['setup_complete']
                     if not (keep or self.dirty or self.pending_power or self.probe_requested):
                         continue
                     self.stage, self.probe_requested = 'ready', False
-                    refresh = (keep and self.cfg.get('last_requested_power') != 'off'
+                    effective = self.power.effective()
+                    refresh = (keep and effective.get('last_requested_power') != 'off'
                                and time.monotonic() - self.last_activity >= KEEPALIVE_SECONDS)
                     action = self.pending_power or 'theme'
                     try:
                         theme, roles = self.theme, self.roles
-                        rendered, colour, advanced = self.cycle.render(self.cfg, roles)
+                        rendered, colour, advanced = self.cycle.render(effective, roles)
                         colour, fading = self.transition.render(theme, roles, colour, self.cfg.get('last_colour'),
                             bool(keep and self.last_signature and not self.pending_power
-                                 and self.cfg.get('last_requested_power') != 'off'))
+                                 and effective.get('last_requested_power') != 'off'),
+                            FADE_DURATIONS[self.cfg['theme_fade']])
                         advanced |= fading
                         self.dirty |= advanced
                     except (OSError, ValueError):
@@ -135,12 +75,14 @@ class LightService:
                     if should_send:
                         retry_power, self.pending_power = self.pending_power, None
                         send_started = True
+                        automatic = self.power.blocked and action == 'off'
                         await self.radio.write(active, action, colour)
                         self.last_activity = time.monotonic()
                         if refresh and not retry_power:
                             self.keepalive_count += 1
                             self.last_keepalive = time.strftime('%Y-%m-%d %H:%M:%S')
                         if self.cfg['address'] == active['address']:
+                            self.power.written(action, automatic)
                             self.cfg['last_sent'] = time.strftime('%Y-%m-%d %H:%M:%S')
                             if action != 'off':
                                 self.cfg.update(last_colour=colour, last_theme=theme, last_role=active['role'])
@@ -154,7 +96,10 @@ class LightService:
                             if retry_power or ((not refresh or requested_colour) and not advanced):
                                 save(self.cfg)
                     failures, self.last_error = 0, ''
-                    self.publish('Light kept off.' if self.cfg.get('last_requested_power') == 'off' else 'Keeping colour active · following theme.' if keep else 'Light updated.', throttle=advanced)
+                    self.publish('Light off while ' + self.power.reason + '.' if self.power.blocked else
+                                 'Light kept off.' if self.cfg.get('last_requested_power') == 'off' else
+                                 'Following theme · cycling colours.' if keep and self.cfg['mode'] == 'cycle' else
+                                 'Following theme · holding colour.' if keep else 'Light updated.', throttle=advanced)
                     if not keep and not self.pending_power and not self.dirty:
                         await self.radio.disconnect()
                         self.stage, self.connected_at = 'offline', None
@@ -185,9 +130,9 @@ class LightService:
             if not self.wake.is_set():
                 if self.cfg['follow'] and self.cfg['setup_complete']:
                     delay = max(0.01, KEEPALIVE_SECONDS - (time.monotonic() - self.last_activity))
-                    if self.cfg.get('last_requested_power') == 'off':
+                    if self.power.blocked or self.cfg.get('last_requested_power') == 'off':
                         delay = KEEPALIVE_SECONDS
-                    effect_delay = self.transition.wait_seconds(self.cycle.wait_seconds(self.cfg))
+                    effect_delay = self.transition.wait_seconds(self.cycle.wait_seconds(self.power.effective()))
                     if effect_delay is not None:
                         delay = min(delay, effect_delay)
                     try:

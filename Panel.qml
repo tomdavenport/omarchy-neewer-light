@@ -19,6 +19,7 @@ Ui.Panel {
   property bool initialized: false
   property bool hadSavedLight: false
   property bool setupVisible: false
+  property bool preferencesVisible: false
   property bool awaitingConfirm: false
   property bool installing: false
   property bool installFailed: false
@@ -27,6 +28,10 @@ Ui.Panel {
   property string localError: ""
   property var pendingActions: []
   property string activeAction: ""
+  property bool outputFinished: false
+  property bool processFinished: false
+  property string processOutput: ""
+  property int processCode: 0
   readonly property string displayMessage: localError ||
     (installing ? "Setting up the local Bluetooth helper and service. This can take about a minute." :
      snapshot.message || "")
@@ -52,6 +57,9 @@ Ui.Panel {
       }
       if (!next || typeof next !== "object" || !Array.isArray(next.roles))
         throw new Error("Invalid light state")
+      if (next.instance !== undefined && snapshot.instance !== undefined &&
+          (next.instance < snapshot.instance ||
+           (next.instance === snapshot.instance && next.revision < snapshot.revision))) return
       if (JSON.stringify(next.roles) === JSON.stringify(snapshot.roles))
         next.roles = snapshot.roles
       var leavingCycle = snapshot.mode === "cycle" && next.mode !== "cycle"
@@ -61,8 +69,8 @@ Ui.Panel {
         setupVisible = true
         cursor = 0
       }
-      if (leavingCycle && !setupVisible && cursor >= 8)
-        cursor = cursor === 8 ? 7 : 8
+      if (leavingCycle && !setupVisible && !preferencesVisible && cursor >= 8)
+        cursor = cursor === 8 ? 7 : cursor - 1
       localError = ""
       if (!initialized) {
         initialized = true
@@ -101,35 +109,55 @@ Ui.Panel {
     startNext()
   }
   function startNext() {
-    if (control.running || pendingActions.length === 0) return
+    if (control.running || activeAction !== "" || pendingActions.length === 0) return
     var queue = pendingActions.slice()
     var next = queue.shift()
     pendingActions = queue
     activeAction = next.action
+    outputFinished = false
+    processFinished = false
+    processOutput = ""
     var args = ["bash", controlScript, next.action]
     if (next.value !== undefined) args.push(String(next.value))
     control.command = args
     control.running = true
   }
+  function finishAction() {
+    if (!activeAction || !outputFinished || !processFinished) return
+    var finishedAction = activeAction
+    accept(processOutput)
+    activeAction = ""
+    if (finishedAction === "install") {
+      installing = false
+      installFailed = processCode !== 0
+    }
+    if (processCode !== 0 && !localError && snapshot.ok !== false)
+      localError = finishedAction === "install" ? "Setup could not finish. Try again." : "The light did not respond. Try a colour preview or Light setup."
+    Qt.callLater(root.startNext)
+  }
   function move(delta) {
     if (!initialized) return
-    var count = setupVisible ? setup.keyboardCount : controls.keyboardCount
+    var count = setupVisible ? setup.keyboardCount : preferencesVisible ? preferences.keyboardCount : controls.keyboardCount
     if (count > 0) cursor = (cursor + delta + count) % count
   }
   function activate() {
     if (!initialized) return
     if (setupVisible) setup.activate(cursor)
+    else if (preferencesVisible) preferences.activate(cursor)
     else controls.activate(cursor)
   }
   function closeOrBack() {
-    if (setupVisible && hadSavedLight && snapshot.backend_ready === true) {
+    if (preferencesVisible) {
+      preferencesVisible = false
+      cursor = 0
+    } else if (setupVisible && hadSavedLight && snapshot.backend_ready === true) {
       setupVisible = false
       cursor = 0
     } else close()
   }
   function ensureCursorVisible() {
     if (!opened) return
-    var target = setupVisible ? setup.cursorItem(cursor) : controls.cursorItem(cursor)
+    var target = setupVisible ? setup.cursorItem(cursor) : preferencesVisible ? preferences.cursorItem(cursor) : controls.cursorItem(cursor)
     if (!target || scroll.height <= 0) return
     var top = target.mapToItem(content, 0, 0).y
     var bottom = top + target.height
@@ -139,6 +167,7 @@ Ui.Panel {
   }
   onCursorChanged: Qt.callLater(root.ensureCursorVisible)
   onSetupVisibleChanged: { scroll.contentY = 0; Qt.callLater(root.ensureCursorVisible) }
+  onPreferencesVisibleChanged: { scroll.contentY = 0; Qt.callLater(root.ensureCursorVisible) }
   onOpenedChanged: if (opened) { issue("status"); Qt.callLater(root.ensureCursorVisible) }
 
   FileView {
@@ -149,20 +178,18 @@ Ui.Panel {
   }
   Process {
     id: control
-    stdout: StdioCollector { onStreamFinished: root.accept(text) }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.processOutput = text
+        root.outputFinished = true
+        root.finishAction()
+      }
+    }
     onExited: function(code, status) {
-      var finishedAction = root.activeAction
-      root.activeAction = ""
-      if (finishedAction === "install") {
-        root.installing = false
-        root.installFailed = code !== 0
-      }
-      if (code !== 0 && !root.localError && root.snapshot.ok !== false) {
-        root.localError = finishedAction === "install" ?
-          "Setup could not finish. Check your connection, then try again." :
-          "The light did not respond. Try a colour preview or Light setup."
-      }
-      Qt.callLater(root.startNext)
+      root.processCode = code
+      root.processFinished = true
+      root.finishAction()
     }
   }
 
@@ -191,7 +218,7 @@ Ui.Panel {
       onTabRequested: function(direction) { root.move(direction) }
       onMoveRequested: function(dx, dy) {
         if (dy) root.move(dy)
-        else if (!root.setupVisible && root.cursor === 3)
+        else if (!root.setupVisible && !root.preferencesVisible && root.cursor === 3)
           root.issue("brightness", Math.max(0, Math.min(100, root.snapshot.brightness + dx * 5)))
         else root.move(dx)
       }
@@ -218,13 +245,24 @@ Ui.Panel {
           Controls {
             id: controls
             width: parent.width
-            visible: root.initialized && !root.setupVisible
+            visible: root.initialized && !root.setupVisible && !root.preferencesVisible
             snapshot: root.snapshot
             cursor: root.cursor
             message: root.displayMessage
             onCommand: function(action, value) { root.issue(action, value) }
             onCursorRequested: function(index) { root.cursor = index }
             onSetupRequested: { root.setupVisible = true; root.cursor = 0 }
+            onPreferencesRequested: { root.preferencesVisible = true; root.cursor = 0 }
+          }
+          Preferences {
+            id: preferences
+            width: parent.width
+            visible: root.initialized && !root.setupVisible && root.preferencesVisible
+            snapshot: root.snapshot
+            cursor: root.cursor
+            onCommand: function(action, value) { root.issue(action, value) }
+            onCursorRequested: function(index) { root.cursor = index }
+            onBackRequested: root.closeOrBack()
           }
           Setup {
             id: setup

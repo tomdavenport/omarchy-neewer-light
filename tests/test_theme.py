@@ -19,7 +19,7 @@ class ThemeTests(unittest.IsolatedAsyncioTestCase):
             colours = root / 'theme/colors.toml'
             colours.write_text('accent="#112233"\norange="#dd7733"\nforeground="#eeeeee"\n')
             (root / 'theme.name').write_text('first')
-            cfg = config.DEFAULTS | dict(address='00:11:22:33:44:55', setup_complete=True)
+            cfg = config.DEFAULTS | dict(address='00:11:22:33:44:55', setup_complete=True, theme_fade='quick')
             radio = FakeRadio()
             with patch.object(config, 'THEME', root), patch.object(service, 'load', lambda: cfg), \
                  patch.object(service, 'Radio', lambda _: radio), patch.object(service, 'save'), \

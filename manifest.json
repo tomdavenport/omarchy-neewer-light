@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.tomdavenport.neewer",
   "name": "NEEWER Light",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "author": "Tom Davenport",
   "description": "Sync a NEEWER RGB1 light stick with your Omarchy theme over Bluetooth. Three palette colours, gentle fades and simple brightness controls.",
   "kinds": [

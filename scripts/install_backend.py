@@ -13,7 +13,8 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 FILES = ('controller.py', 'light_ble.py', 'light_commands.py', 'light_config.py',
          'light_daemon.py', 'light_effects.py', 'light_palette.py', 'light_service.py',
-         'light_transition.py', 'theme_watch.py')
+         'light_transition.py', 'theme_watch.py', 'light_state.py', 'light_power.py',
+         'lock_watch.py', 'shutdown_watch.py')
 UNIT = '''[Unit]
 Description=NEEWER light theme utility
 After=graphical-session.target

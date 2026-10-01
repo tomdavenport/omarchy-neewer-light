@@ -6,7 +6,7 @@ import re
 import time
 import tomllib
 from pathlib import Path
-from light_palette import COLOUR_KEYS, hsv, complementary, alternate, blend, validate_mix
+from light_palette import COLOUR_KEYS, hsv, complementary, alternate, blend, validate_mix, held
 
 HOME = Path.home()
 CONFIG = Path(os.environ.get('NEEWER_CONFIG', HOME / '.config/neewer-omarchy/config.json'))
@@ -16,7 +16,8 @@ SOCKET = Path(os.environ.get('XDG_RUNTIME_DIR', STATE)) / 'neewer-light.sock'
 ROLES = ('accent', 'complementary', 'alternate')
 DEFAULTS = dict(address='', model='RGB1', protocol='infinity', brightness=20,
                 follow=True, role='accent', setup_complete=False, power='unknown',
-                mode='steady', speed='slow', last_nonzero_brightness=20)
+                mode='steady', speed='slow', last_nonzero_brightness=20,
+                theme_fade='gentle', off_when_locked=False, off_on_shutdown=False)
 
 
 def valid_address(value):
@@ -47,6 +48,10 @@ def load():
         raise ValueError('Light mode must be steady or cycle.')
     if cfg['speed'] not in ('slow', 'medium', 'fast'):
         raise ValueError('Cycle speed must be slow, medium or fast.')
+    if cfg['theme_fade'] not in ('off', 'quick', 'gentle'):
+        raise ValueError('Theme fade must be off, quick or gentle.')
+    if any(not isinstance(cfg[key], bool) for key in ('off_when_locked', 'off_on_shutdown')):
+        raise ValueError('Automatic power settings must be on or off.')
     old_roles = {'secondary': 'complementary', 'neutral': 'accent'}
     cfg['role'] = old_roles.get(cfg['role'], cfg['role'])
     if cfg['role'] not in ROLES:
@@ -92,7 +97,7 @@ def selected(cfg):
     theme, roles = palette()
     colour = next(r['hex'] for r in roles if r['id'] == cfg['role'])
     if cfg.get('mode') == 'steady' and cfg.get('held_mix') is not None:
-        colour = blend(roles, cfg['held_mix'])
+        colour = held(cfg, roles) or blend(roles, cfg['held_mix'])
     return theme, roles, colour
 
 

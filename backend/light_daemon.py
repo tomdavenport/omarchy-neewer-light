@@ -8,6 +8,8 @@ import signal
 from light_config import SOCKET, STATE, THEME
 from light_service import LightService
 from theme_watch import ThemeWatch
+from lock_watch import LockWatch
+from shutdown_watch import ShutdownWatch
 
 
 async def main():
@@ -39,6 +41,13 @@ async def main():
         server = await asyncio.start_unix_server(handle, path=str(SOCKET), limit=8192)
         SOCKET.chmod(0o600)
         watcher = ThemeWatch(THEME, service.theme_changed)
+        locks, shutdown = LockWatch(service), ShutdownWatch(service)
+        service.power_settings_changed = lambda: (locks.update(), shutdown.changed.set())
+        listeners = [asyncio.create_task(locks.run()), asyncio.create_task(shutdown.run())]
+        try:
+            await asyncio.wait_for(locks.ready.wait(), 3)
+        except TimeoutError:
+            pass
         runner = asyncio.create_task(service.run())
         runner.add_done_callback(lambda _: stop.set())
         service.publish()
@@ -49,9 +58,11 @@ async def main():
             server.close()
             await server.wait_closed()
             runner.cancel()
+            for listener in listeners:
+                listener.cancel()
             for task in service.tasks:
                 task.cancel()
-            await asyncio.gather(runner, *service.tasks, return_exceptions=True)
+            await asyncio.gather(runner, *listeners, *service.tasks, return_exceptions=True)
             await service.radio.disconnect()
             SOCKET.unlink(missing_ok=True)
             service.stage = 'offline'

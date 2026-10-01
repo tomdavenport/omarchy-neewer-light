@@ -15,6 +15,7 @@ Match a **NEEWER RGB1 light stick** to your Omarchy theme, directly over Bluetoo
 - **Gentle ambient fades.** Optional Cycle blends between those colours. Choose Slow, Medium or Fast; turning Cycle off holds the current blend.
 - **Simple everyday controls.** Brightness, On, Off and Follow theme. Your choices are saved.
 - **A connection that stays ready.** A local background helper maintains the selected RGB1 connection and retries if it drops.
+- **Automatic power, if you want it.** Preferences can turn the light off when you lock, restore it on unlock, and send Off before a normal shutdown or restart.
 
 Tested with one **NEEWER RGB1** on **Omarchy 4.0.4**. Other NEEWER lights, older Omarchy desktops without the plugin system, and multiple-light setups are not supported by this release.
 
@@ -51,8 +52,17 @@ Only matching RGB1 devices appear in the list. The final confirmation is availab
 | **Speed** | Slow: 12 seconds per fade. Medium: 6 seconds. Fast: 3 seconds. |
 | **Follow theme** | Keeps the light connected and follows Omarchy theme changes. Turning it off stops Cycle and releases the connection for the phone app. |
 | **Off** | Keeps the light off through theme changes and reconnects. On, a swatch preview or starting Cycle turns it on again. |
+| **Preferences** | Theme fade: Gentle (1 second), Quick (0.42 seconds), or Off. Separate switches for off when locked and off on shutdown. |
 
 Start with **Cycle on Slow** for gentle room lighting. Faster fades can show small steps when you look directly at the LEDs. If brightness was zero, On or a swatch preview restores your last nonzero level.
+
+**Theme fade and Cycle are separate:** theme fade runs once when the desktop theme changes; Cycle repeats through the palette. Stopping Cycle holds the last colour sent, including when a theme fade was in progress.
+
+### Automatic power
+
+Open **Preferences** to enable **Off when locked** and/or **Off on shutdown**. Both start off for new installations. Locking can temporarily turn the light off; unlocking restores it only after a successful automatic Off and if you have not manually switched it off. The helper remembers a successful automatic Off across restarts. Manual Off stays off.
+
+Lock detection uses Hyprland's public `hyprland_lock_notify_v1` protocol, available on the tested Hyprland 0.56.2. It subscribes only to lock notifications, with no screenshot, window or input access. The panel reports when the protocol is unavailable. Shutdown detection uses systemd-logind with a delay capped at 1.5 seconds (or the system's shorter limit) for the off attempt. A normal helper upgrade does not trigger shutdown Off. Radio unavailability, forced shutdown and sudden power loss can prevent delivery; these settings cannot guarantee an off command reaches a disconnected light.
 
 The three swatches are exact colours from the active theme: Main uses its accent; Complement favours a contrasting hue; Alternate adds a third distinct palette colour. During a fade the light displays intermediate blends. Monochrome themes may produce similar-looking choices. The light's hue/saturation controls and separate brightness mean it will not exactly match a calibrated screen.
 
@@ -72,7 +82,7 @@ Keyboard support: Tab or arrow keys move between controls, Enter activates, Left
 
 ## What is installed
 
-The widget asks before installing its local helper. It downloads pinned **Bleak 3.0.2** and **dbus-fast 5.0.22** from Python's package index. A Python virtual environment keeps them separate from system packages. The helper uses BlueZ over the system D-Bus and a private local socket; there is no web server, telemetry or account. The selected Bluetooth address is stored only in your local settings.
+The widget asks before installing its local helper. It downloads pinned **Bleak 3.0.2** and **dbus-fast 5.0.22** from Python's package index. A Python virtual environment keeps them separate from system packages. The helper uses BlueZ and logind over the system D-Bus, a private local control socket, and an optional Wayland lock-notification connection; there is no web server, telemetry or account. The selected Bluetooth address is stored only in your local settings.
 
 - Plugin source: `~/.config/omarchy/plugins/io.github.tomdavenport.neewer/`
 - Helper and its environment: `~/.local/share/neewer-omarchy/`
@@ -86,7 +96,7 @@ Setup preserves the saved light and brightness. Before replacing helper files it
 
 Theme-file events provide the quick response; the theme hook is a fallback. While steady, the helper refreshes the colour every five seconds without repeatedly sending power On. Fades use paced, serial writes and skip redundant or missed frames. This is connection maintenance, not a guarantee against radio interference or a powered-down light.
 
-Theme changes use Omarchy 4's 420 ms ease-in/ease-out curve, starting near the background transition. They blend from the last colour sent to the RGB1, including during Cycle. Colour previews stay immediate. The background-file event provides approximate alignment; Bluetooth latency and wallpaper loading can affect the visible timing. Reconnecting lights apply the latest palette directly.
+Theme changes use a gentle one-second ease-in/ease-out by default, starting near the background transition. Quick uses Omarchy 4's 420 ms duration; Off applies the new palette immediately. They blend from the last colour sent to the RGB1, including during Cycle. Colour previews stay immediate. The background-file event provides approximate alignment; Bluetooth latency and wallpaper loading can affect the visible timing. Reconnecting lights apply the latest palette directly.
 
 ## Update
 
@@ -125,6 +135,9 @@ neewer-light mode steady
 neewer-light off
 neewer-light on
 neewer-light follow off
+neewer-light fade gentle
+neewer-light lock-off on
+neewer-light shutdown-off on
 ```
 
 ## Development and tests
@@ -136,7 +149,7 @@ PYTHONPATH=backend /tmp/neewer-dev-venv/bin/python -m unittest discover -s tests
 omarchy plugin validate .
 ```
 
-Tests use simulated Bluetooth devices and temporary settings. No real light is required. Optional installed-theme checks skip on machines without Omarchy. Source validation does not replace testing the native UI on a fresh Omarchy machine.
+Tests use simulated Bluetooth devices, temporary settings, a fake Wayland socket and simulated shutdown events. They never lock or shut down the host. No real light is required. The panel's JavaScript ordering regression runs when Node is available; optional installed-theme checks skip on machines without Omarchy. Source validation does not replace testing the native UI on a fresh Omarchy machine.
 
 ## Licence and credits
 

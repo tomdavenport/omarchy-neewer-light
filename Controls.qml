@@ -8,9 +8,10 @@ Column {
   property var snapshot
   property int cursor: 0
   property string message: ""
-  readonly property int keyboardCount: snapshot.mode === "cycle" ? 10 : 9
+  readonly property int keyboardCount: snapshot.mode === "cycle" ? 11 : 10
   signal command(string action, var value)
   signal setupRequested()
+  signal preferencesRequested()
   signal cursorRequested(int index)
 
   function activate(index) {
@@ -23,11 +24,13 @@ Column {
     else if (index === 7) command("mode", snapshot.mode === "cycle" ? "steady" : "cycle")
     else if (index === 8 && snapshot.mode === "cycle")
       command("speed", snapshot.speed === "slow" ? "medium" : snapshot.speed === "medium" ? "fast" : "slow")
+    else if (index === keyboardCount - 2) preferencesRequested()
     else if (index === keyboardCount - 1) setupRequested()
   }
   function cursorItem(index) {
     if (index < 3) return roleChoices.itemAt(index) || roleRow
     if (index === keyboardCount - 1) return setupButton
+    if (index === keyboardCount - 2) return preferencesButton
     return [slider, onButton, offButton, followButton, cycleButton, speedButton][index - 3]
   }
 
@@ -165,6 +168,15 @@ Column {
     wrapMode: Text.Wrap
     font.family: Style.font.family
     font.pixelSize: Style.font.bodySmall
+  }
+  Ui.Button {
+    id: preferencesButton
+    width: parent.width
+    text: "Preferences"
+    leftAlign: true
+    hasCursor: root.cursor === root.keyboardCount - 2
+    onClicked: root.preferencesRequested()
+    onHovered: function(hot) { if (hot) root.cursorRequested(root.keyboardCount - 2) }
   }
   Ui.Button {
     id: setupButton

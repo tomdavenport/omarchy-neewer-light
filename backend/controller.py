@@ -28,7 +28,8 @@ def request(action, value):
 def main():
     parser = argparse.ArgumentParser(description='Your Omarchy light utility.')
     parser.add_argument('action', choices=['status', 'probe', 'theme', 'on', 'off', 'brightness',
-        'follow', 'hook', 'role', 'preview', 'mode', 'speed', 'scan', 'select', 'test', 'confirm'])
+        'follow', 'hook', 'role', 'preview', 'mode', 'speed', 'scan', 'select', 'test', 'confirm',
+        'fade', 'lock-off', 'shutdown-off'])
     parser.add_argument('value', nargs='?')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()

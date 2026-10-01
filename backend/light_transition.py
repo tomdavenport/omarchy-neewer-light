@@ -1,8 +1,8 @@
 """Short theme-change fades layered over the existing steady/Cycle colour."""
 import time
 
-# Omarchy 4's Background.qml: NumberAnimation, 420 ms, Easing.InOutCubic.
-THEME_FADE_SECONDS = 0.420
+FADE_DURATIONS = {'off': 0.0, 'quick': 0.420, 'gentle': 1.0}
+THEME_FADE_SECONDS = FADE_DURATIONS['gentle']
 FADE_FRAME_SECONDS = 0.05
 
 
@@ -21,6 +21,7 @@ class ThemeTransition:
         self.key = palette_key(theme, roles)
         self.started = None
         self.source = None
+        self.duration = THEME_FADE_SECONDS
 
     @property
     def active(self):
@@ -30,18 +31,19 @@ class ThemeTransition:
         self.key = palette_key(theme, roles)
         self.started, self.source = None, None
 
-    def render(self, theme, roles, target, last_colour, eligible):
+    def render(self, theme, roles, target, last_colour, eligible, duration=THEME_FADE_SECONDS):
         """Use the last completed hardware write; never replay old fade frames."""
         key = palette_key(theme, roles)
         if key != self.key:
             self.cancel(theme, roles)
-            if eligible and last_colour and last_colour != target:
+            if eligible and duration > 0 and last_colour and last_colour != target:
                 self.started, self.source = time.monotonic(), last_colour
+                self.duration = duration
         if not eligible:
             self.cancel(theme, roles)
         if not self.active:
             return target, False
-        progress = max(0.0, (time.monotonic() - self.started) / THEME_FADE_SECONDS)
+        progress = max(0.0, (time.monotonic() - self.started) / self.duration)
         if progress >= 1.0:
             self.cancel(theme, roles)
             return target, True  # The exact final colour still needs a write.
@@ -50,5 +52,5 @@ class ThemeTransition:
     def wait_seconds(self, default=None):
         if not self.active:
             return default
-        remaining = self.started + THEME_FADE_SECONDS - time.monotonic()
+        remaining = self.started + self.duration - time.monotonic()
         return min(FADE_FRAME_SECONDS, max(0.001, remaining))

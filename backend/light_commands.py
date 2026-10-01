@@ -65,6 +65,14 @@ def command(service, action, value=None):
         cfg['brightness'], updates['dirty'] = number, True
         if number:
             cfg['last_nonzero_brightness'] = number
+    elif action == 'fade':
+        if value not in ('off', 'quick', 'gentle'):
+            raise ValueError('Choose off, quick or gentle.')
+        cfg['theme_fade'], updates['dirty'] = value, True
+    elif action in ('lock-off', 'shutdown-off'):
+        if value not in ('on', 'off'):
+            raise ValueError('Choose on or off.')
+        cfg['off_when_locked' if action == 'lock-off' else 'off_on_shutdown'] = value == 'on'
     elif action == 'follow':
         if value not in ('on', 'off'):
             raise ValueError('Choose follow on or off.')
@@ -91,13 +99,19 @@ def command(service, action, value=None):
         raise ValueError('Unknown light command.')
     if action in ('role', 'preview', 'select'):
         cfg.pop('held_mix', None)
+    if action in ('role', 'preview', 'select') or (action == 'mode' and value == 'cycle'):
+        cfg.pop('held_colour', None)
+        cfg.pop('held_palette', None)
     if (service.cfg.get('mode') == 'cycle' and cfg.get('mode') == 'steady'
             and action in ('mode', 'follow') and service.cycle.weights is not None):
         cfg['held_mix'] = list(service.cycle.weights)
+        cfg['held_colour'] = service.cfg.get('last_colour', service.colour)
+        cfg['held_palette'] = [r['hex'] for r in service.roles]
     theme, roles, colour = selected(cfg)
     save(cfg)
     service.cfg = cfg
-    if action in ('role', 'preview', 'select', 'on', 'off', 'test') or (action == 'follow' and not cfg['follow']):
+    if (action in ('role', 'preview', 'select', 'on', 'off', 'test', 'fade')
+            or (action == 'mode' and value == 'steady') or (action == 'follow' and not cfg['follow'])):
         service.transition.cancel(theme, roles)
     logging.info('RGB1 control %s %s', action, value if value is not None else '')
     if action in ('role', 'preview', 'mode', 'speed', 'follow', 'select', 'confirm', 'on'):
@@ -106,6 +120,9 @@ def command(service, action, value=None):
         setattr(service, key, val)
     service.theme, service.roles, service.colour = theme, roles, colour
     service.generation += 1
+    service.power.reconcile()
+    if action in ('lock-off', 'shutdown-off'):
+        service.power_settings_changed()
     service.wake.set()
     service.publish('Updating light…' if service.dirty or service.pending_power else 'Settings saved.')
     return service.snapshot()

@@ -34,7 +34,7 @@ class FakeRadio:
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.cfg = DEFAULTS | dict(address='00:11:22:33:44:55', setup_complete=True,
-                                   last_requested_power='on')
+                                   last_requested_power='on', theme_fade='quick')
         self.colours = ['#123456', '#abcdef', '#eeeeee']
         self.theme = 'First'
         self.radio = FakeRadio()

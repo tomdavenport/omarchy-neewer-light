@@ -18,7 +18,7 @@ class TransitionTests(unittest.TestCase):
         self.fade = transition.ThemeTransition('old', self.old)
 
     def render(self, target='#ffffff', source='#000000', eligible=True):
-        return self.fade.render('new', self.new, target, source, eligible)
+        return self.fade.render('new', self.new, target, source, eligible, duration=0.420)
 
     def test_matches_omarchy_cubic_curve_and_exact_deadline(self):
         self.assertEqual(self.render(), ('#000000', True))
@@ -56,6 +56,15 @@ class TransitionTests(unittest.TestCase):
         self.fade.cancel('new', self.new)
         self.assertEqual(self.render('#ff0000'), ('#ff0000', False))
         self.assertIsNone(self.fade.wait_seconds())
+
+    def test_gentle_default_takes_one_second_and_off_is_immediate(self):
+        self.fade.render('new', self.new, '#ffffff', '#000000', True)
+        self.now = 0.5
+        self.assertEqual(self.fade.render('new', self.new, '#ffffff', '#000000', True), ('#808080', True))
+        self.now = 1.0
+        self.assertEqual(self.fade.render('new', self.new, '#ffffff', '#000000', True), ('#ffffff', True))
+        self.fade.cancel('old', self.old)
+        self.assertEqual(self.fade.render('new', self.new, '#ffffff', '#000000', True, 0), ('#ffffff', False))
 
 
 class TransitionServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -128,3 +137,15 @@ class TransitionServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.until(lambda: self.radio.connections == 2)
         self.assertEqual(self.radio.writes[-1][2], '#4400ff')
         self.assertFalse(self.service.transition.active)
+
+    async def test_stopping_cycle_during_theme_fade_holds_last_sent_colour(self):
+        self.service.cfg['mode'] = 'cycle'
+        await self.begin_fade()
+        await self.until(lambda: len(self.radio.writes) > 2)
+        actual = self.service.cfg['last_colour']
+        self.service.command('mode', 'steady')
+        count = len(self.radio.writes)
+        await asyncio.sleep(0.5)
+        self.assertFalse(self.service.transition.active)
+        self.assertEqual(self.service.colour, actual)
+        self.assertEqual(len(self.radio.writes), count)

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.0 — Gentle transitions and automatic power
+
+- Preferences now offers Gentle (1 second), Quick (0.42 seconds) or Off for theme changes.
+- Optional Off when locked uses Hyprland lock notifications; unlock restores only a successful automatic Off. Manual Off stays off.
+- Optional Off on shutdown sends a bounded Off attempt before a normal shutdown or restart.
+- Fix stale UI responses that could misreport Cycle state. Commands now wait for both process exit and complete output, and older snapshots are ignored.
+- Stopping Cycle also stops an active theme fade and holds the last colour sent.
+
 ## 2.4.1 — Fade with theme changes
 
 - Blend from the current light colour into a new theme using Omarchy's 420 ms cubic easing.

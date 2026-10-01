@@ -54,7 +54,7 @@ class PaletteCycle:
         if cfg.get('mode', 'steady') != 'cycle':
             self.role = cfg.get('role') if cfg.get('role') in role_ids else role_ids[0]
             weights = _mix(cfg.get('held_mix'))
-            colour = light_palette.blend(roles, weights) if weights else next(
+            colour = (light_palette.held(cfg, roles) or light_palette.blend(roles, weights)) if weights else next(
                 item['hex'] for item in roles if item['id'] == self.role)
             return active, colour, False
 
